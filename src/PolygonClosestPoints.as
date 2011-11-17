@@ -10,11 +10,12 @@ package
 	import geometry.AABB;
 	import geometry.Polygon2d;
 	import geometry.Vector2d;
-	import physics.PolygonDistance ;
+	
+	import physics.PolygonDistance;
 	import physics.lcp.LcpSolver;
 	
 	
-	[SWF(width='600',height='600')]
+	[SWF(width='400',height='400')]
 	public class PolygonClosestPoints extends Sprite
 	{
 		private var polygons:Vector.<Polygon2d> ;
@@ -40,7 +41,6 @@ package
 			
 			//	Enter frame draws everything
 			stage.addEventListener( MouseEvent.MOUSE_DOWN, mouseDown ) ;
-			stage.addEventListener( MouseEvent.MOUSE_UP, mouseUp );
 			
 			//	Calculate distance
 			calculateDistance();
@@ -52,7 +52,7 @@ package
 		
 		private function calculateDistance( ):void
 		{
-			var solution:Object = PolygonDistance.distance( polygons[0], polygons[1] );
+			var solution:Object = PolygonDistance.distance( polygons[0].clone(), polygons[1].clone());
 			if ( solution.status == LcpSolver.FOUND_SOLUTION )
 			{
 				this.solution = solution ;
@@ -72,30 +72,40 @@ package
 			for ( var i:int = 0; i < polygons.length; i++)
 			{
 				var polygon:Polygon2d = polygons[i] ;
-				var mouseInside:Boolean = true ;
-				for ( var j:int = 0; j < polygon.vertices.length; j++)
-				{
-					if ( polygon.normals[j].dot( mouse.Subtract( polygon.vertices[j] )) > 0 )
-					{
-						mouseInside = false ;
-						break;
-					}
-				}
-				
+				var mouseInside:Boolean = isInside( polygon, mouse );
 				if ( mouseInside )
 				{
 					currentPolygon = i ;
 					offset = polygon.centroid.Subtract( mouse );
 					addEventListener( Event.ENTER_FRAME, frame );
+					stage.addEventListener( MouseEvent.MOUSE_UP, mouseUp );
+					stage.removeEventListener( MouseEvent.MOUSE_DOWN, mouseDown );
 					break ;
 				}
 			}
+			
 		}
+		
+		
+		private function isInside( polygon:Polygon2d, point:Vector2d ):Boolean
+		{
+			for ( var j:int = 0; j < polygon.vertices.length; j++)
+			{
+				if ( polygon.normals[j].dot( point.Subtract( polygon.vertices[j] )) > 0 )
+				{
+					return false ;
+				}
+			}
+			return true ;
+		}
+		
 		
 		private function mouseUp( event:Event ):void
 		{
 			currentPolygon = -1 ;
 			removeEventListener( Event.ENTER_FRAME, frame );
+			stage.addEventListener( MouseEvent.MOUSE_DOWN, mouseDown ) ;
+			stage.removeEventListener( MouseEvent.MOUSE_UP, mouseUp );
 		}
 		
 		/**
@@ -105,17 +115,38 @@ package
 		 */		
 		private function frame( event:Event ):void
 		{
+			//	Mouse location
+			var mouse:Vector2d = new Vector2d( mouseX, mouseY );
+			
 			//	Determine which polygon the mouse is inside
 			var n:int = polygons[currentPolygon].vertices.length ;
-			var mouse:Vector2d = new Vector2d( mouseX, mouseY );
-			var centroid:Vector2d = mouse.Add( offset );
+			
+			//	Constrain the centroid so that the polygon doesn't
+			//	go into a negative quadrant of the stage
+			var min:Vector2d = new Vector2d( Number.MAX_VALUE, Number.MAX_VALUE );
+			var max:Vector2d = new Vector2d( );
 			for ( var i:int = 0; i < n; i++ )
 			{
-				var vertex:Vector2d = polygons[currentPolygon].vertices[i] ;
+				var vertex:Vector2d = polygons[currentPolygon].vertices[i].Subtract( polygons[currentPolygon].centroid ) ;
+				min.x = Math.min( vertex.x, min.x );
+				min.y = Math.min( vertex.y, min.y );
+				max.x = Math.max( vertex.x, max.x );
+				max.y = Math.max( vertex.y, max.y );
+			}
+			var centroid:Vector2d = mouse.Add( offset );
+			centroid.x = Math.max( centroid.x, Math.abs(min.x-2));
+			centroid.y = Math.max( centroid.y, Math.abs(min.y-2));
+			centroid.x = Math.min( centroid.x, stage.stageWidth - ( max.x + 2));
+			centroid.y = Math.min( centroid.y, stage.stageHeight - ( max.y + 2));
+			for ( i = 0; i < n; i++ )
+			{
+				vertex = polygons[currentPolygon].vertices[i] ;
 				vertex.subtract( polygons[currentPolygon].centroid );
 				vertex.add( centroid ) ;
 			}
+			
 			polygons[currentPolygon].centroid = centroid ;
+			polygons[currentPolygon].orderVertices();			
 			polygons[currentPolygon].updateLines();
 			
 			//	Calculate the distance between them
@@ -129,6 +160,12 @@ package
 		private function draw( polygons:Vector.<Polygon2d> ):void
 		{
 			graphics.clear();
+			if ( solution != null )
+			{
+				graphics.lineStyle( 2, 0xff0000 );
+				graphics.moveTo( solution.Z[0], solution.Z[1] );
+				graphics.lineTo( solution.Z[2], solution.Z[3] );
+			}
 			graphics.lineStyle( 2, 0x000000 );
 			for ( var i:int = 0; i < polygons.length; i++ )
 			{	
@@ -140,13 +177,6 @@ package
 					graphics.moveTo( a.x, a.y );
 					graphics.lineTo( b.x, b.y );
 				}
-			}
-			
-			if ( solution != null )
-			{
-				graphics.lineStyle( 1, 0x222222 );
-				graphics.moveTo( solution.Z[0], solution.Z[1] );
-				graphics.lineTo( solution.Z[2], solution.Z[3] );
 			}
 		}
 		

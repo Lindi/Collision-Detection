@@ -4,7 +4,8 @@ package collisiondetection
 	
 	import util.Iterator;
 	
-	import geometry.AABB;
+	
+	import geometry.AABB ;
 
 	public class IntersectingAABB
 	{

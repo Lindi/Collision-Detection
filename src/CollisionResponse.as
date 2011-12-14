@@ -99,8 +99,6 @@ package
 				
 				//	Get the AABB
 				aabb = aabbs[i] ;
-				
-				
 				var offstage:Boolean = ( aabb.xmin <= 0 )
 					|| ( aabb.xmax >= stage.stageWidth )
 					|| ( aabb.ymin <= 0 )
@@ -177,47 +175,31 @@ package
 				var distance:Number, minDistance:Number ;
 				if ( polygonsIntersect )
 				{
+					trace( "polygonsIntersect");
 					//	Separate the AABBs
 					var intersection:AABB = new AABB();
 					aabbs[0].findIntersection( aabbs[1], intersection );
 					var w:Number = intersection.width ;
 					var h:Number = intersection.height ;
-					var d:Number = Math.sqrt( w * w + h * h ) ;
-					//var d:Number = Math.min( intersection.width, intersection.height ) ;
+					var d:Number = Math.max( w, h );//Math.sqrt( w * w + h * h ) ;
 					
 					//	Normalize the vector between the centroids and
 					//	move the polygons by this distance
 					var v:Vector2d = polygons[1].centroid.Subtract( polygons[0].centroid );
-//					v.normalize();
-//					if ( polygons[0].moved && !polygons[1].moved )
-//					{
-//						//	Move polygon 1
-//						centroid = polygons[1].centroid.Add( v.ScaleBy( d ));
-//						updateCentroid( polygons[1], centroid ) ;
-//						polygons[1].moved = true ;
-//						
-//					} else if ( !polygons[0].moved && polygons[1].moved )
-//					{
-//						//	Move polygon 0
-//						centroid = polygons[0].centroid.Add( v.Negate().ScaleBy( d ));
-//						updateCentroid( polygons[0], centroid ) ;
-//						polygons[0].moved = true ;
-//						
-//					} else 
-					{
-						//	Move them both half the distance
-						//	Move polygon 0
-						centroid = polygons[0].centroid.Add( v.Negate().ScaleBy( d/2 ));
-						updateCentroid( polygons[0], centroid ) ;
-						polygons[0].moved = true ;
+					v.normalize();
+					
+					//	Move them both half the distance
+					//	Move polygon 0
+					centroid = polygons[0].centroid.Add( v.Negate().ScaleBy( d/2 ));
+					updateCentroid( polygons[0], centroid ) ;
+					polygons[0].moved = true ;
+					
+					
+					//	Move polygon 1
+					centroid = polygons[1].centroid.Add( v.ScaleBy( d/2 ));
+					updateCentroid( polygons[1], centroid ) ;
+					polygons[1].moved = true ;
 						
-						
-						//	Move polygon 1
-						centroid = polygons[1].centroid.Add( v.ScaleBy( d/2 ));
-						updateCentroid( polygons[1], centroid ) ;
-						polygons[1].moved = true ;
-						
-					}
 				}
 				
 				polygonsIntersect = SeparatingAxes.testIntersection( polygons[0], polygons[1] );
@@ -236,72 +218,65 @@ package
 					
 					if ( distance < minDistance )
 					{
-//						var u:Vector2d ;
-//						u = collisionResponse( polygons[0], polygons[1], velocity[0], velocity[1], a, distance );
-//						v = collisionResponse( polygons[1], polygons[0], velocity[1], velocity[0], b, distance );
-//						if ( u != null )
-//						{
-//							velocity[0] = u.ScaleBy( velocity[0].length ) ; 
-//						}
-//						if ( v != null )
-//						{
-//							velocity[1] = v.ScaleBy( velocity[1].length ) ; 
-//						}
-						
-						//	Move b half the distance
-						var relativePosition:Vector2d = polygons[0].centroid.Subtract( polygons[1].centroid );
-						relativePosition.normalize();
-
-						centroid = polygons[0].centroid.clone();
-						centroid.Add( relativePosition..Negate().ScaleBy( distance/2 ));
-						updateCentroid( polygons[0], centroid ) ;
-						
-						//	Move a half the distance
-						centroid = polygons[1].centroid.clone();
-						centroid.Add( relativePosition.ScaleBy( distance/2 ));
-						updateCentroid( polygons[1], centroid ) ;
-
-						var normal:Vector2d = getNormal( polygons[0], a );
-						normal.normalize();
-						var relativeVelocity:Vector2d = velocity[1].Subtract( velocity[0] );
-						
-						if ( normal.dot( relativeVelocity ) < 0 )
 						{
-							//	We know we're colliding, so calculate the change in velocity
-							//	and update accordingly
-							var perp:Vector2d = normal.perp();
-							if ( relativeVelocity.dot( perp ) < 0 )
+							//	Some variables
+							var normal:Vector2d, relativePosition:Vector2d, 
+							relativeVelocity:Vector2d, perp:Vector2d, newVelocity:Vector2d ;
+							
+							//	Check to see if the closest point a is a vertex point or an edge point
+							var aIsVertex:Boolean = isVertex( polygons[0], a );
+							var bIsVertex:Boolean = isVertex( polygons[1], b );
+							
+							//	Check to see if the closest point b is a vertex point or an edge point
+							if ( bIsVertex && aIsVertex )
 							{
-								perp.negate();
-							}
-							var newVelocity:Vector2d = perp.Subtract( normal.ScaleBy(normal.dot( relativeVelocity )));
-							//newVelocity.normalize();
-							v = newVelocity.clone() ; //velocity[1].Add( newVelocity.ScaleBy( velocity[1].length ));
-							v.scale( velocity[1].length );
-							
-							//	We know we're colliding, so calculate the change in velocity
-							//	and update accordingly
-							relativeVelocity = velocity[0].Subtract( velocity[1] );
-							normal = getNormal( polygons[1], b );
-							perp = normal.perp();
-							if ( relativeVelocity.dot( perp ) < 0 )
+								
+							} else if ( bIsVertex )
 							{
-								perp.negate();
+								//	Move b towards a
+								relativePosition = polygons[0].centroid.Subtract( polygons[1].centroid );
+								relativePosition.normalize();
+								centroid = polygons[1].centroid.clone();
+								centroid.Add( relativePosition.ScaleBy( distance ));
+								updateCentroid( polygons[1], centroid ) ;
+								
+								//	Collide
+								collide( 0, 1, [a] ) ;
+
+							} else if ( aIsVertex )
+							{
+								//	Get the normal from b, and move a to b
+								//	Move b half the distance
+								relativePosition = polygons[1].centroid.Subtract( polygons[0].centroid );
+								relativePosition.normalize();
+								centroid = polygons[0].centroid.clone();
+								centroid.Add( relativePosition.ScaleBy( distance ));
+								updateCentroid( polygons[0], centroid ) ;
+								
+								
+								
+								//	Collide
+								collide( 1, 0, [b] ) ;
+
+							} else
+							{
+								
+								relativePosition = polygons[1].centroid.Subtract( polygons[0].centroid );
+								relativePosition.normalize();
+								//	Move b half the distance
+								centroid = polygons[0].centroid.clone();
+								centroid.Add( relativePosition.Negate().ScaleBy( distance/2 ));
+								updateCentroid( polygons[0], centroid ) ;
+								
+								//	Move a half the distance
+								centroid = polygons[1].centroid.clone();
+								centroid.Add( relativePosition.ScaleBy( distance/2 ));
+								updateCentroid( polygons[1], centroid ) ;
+								
+								//	Collide
+								collide( 0, 1, [a,b] ) ;
 							}
-							newVelocity = perp.Subtract( normal.ScaleBy(normal.dot( relativeVelocity )));
-							newVelocity.scale( velocity[0].length );
-							//newVelocity.normalize();
-							velocity[0].x = newVelocity.x ; //velocity[0].Add( newVelocity.ScaleBy( velocity[0].length ));
-							velocity[0].y = newVelocity.y ;
-							velocity[1].x = v.x ;
-							velocity[1].y = v.y ;
-							trace( "velocity[0]", velocity[0], "velocity[1]", velocity[1] );
-							
-							
-							
 						}
-						
-						
 					}
 				}
 			}
@@ -317,31 +292,92 @@ package
 				//	Move the polygons
 				centroid.x += ( velocity[i].x * dt ) ;
 				centroid.y += ( velocity[i].y * dt ) ;
+//				trace( "velocity["+i+"]", velocity[i] );
+//				trace( "centroid["+i+"]", centroid );
+
 				
 				updateCentroid( polygon, centroid ) ;
 				
-//				//	Rotate the polygons
-//				var vertices:Vector.<Vector2d> = polygon.vertices ;
-//				for ( var j:int = 0; j < vertices.length; j++ )
-//				{
-//					alpha = 0;
-//					var vertex:Vector2d = vertices[j] ;	
-//					vertex.x -= polygon.centroid.x ;
-//					vertex.y -= polygon.centroid.y ;
-//					var x:Number = vertex.x * Math.cos( alpha ) - vertex.y * Math.sin( alpha ) ;
-//					var y:Number = vertex.x * Math.sin( alpha ) + vertex.y * Math.cos( alpha ) ; 
-//					vertex.x = x + centroid.x ;
-//					vertex.y = y + centroid.y ;
-//				}
-//				polygon.centroid.x = centroid.x ;
-//				polygon.centroid.y = centroid.y ;
-				
-				//	Update their lines
-				//polygon.updateLines();
 			}
 			
 			
 			draw( 0x000000 );
+		
+		}
+		
+		/**
+		 * Handle the collision response 
+		 * @param a
+		 * @param b
+		 * @param closestPoint
+		 * 
+		 */		
+		private function collide( a:int, b:int, closestPoints:Array ):void
+		{
+			return ;
+			
+			//	Some variables
+			var normal:Vector2d, relativePosition:Vector2d, 
+			relativeVelocity:Vector2d, perp:Vector2d, newVelocity:Vector2d ;
+			
+			//	Variable v
+			var v:Vector2d ;
+			
+			//	Get the relative velocity
+			relativeVelocity = velocity[b].Subtract( velocity[a] );
+
+			//	Get the normal
+			normal = getNormal( polygons[a], closestPoints[0] as Vector2d );	
+			
+			//	If the normal dot the relative velocity is greater than zero
+			//	the polygons are separating, so don't do anything
+			if ( normal.dot( relativeVelocity ) > 0 )
+			{
+				return ;
+			}
+			
+			//	We know we're colliding, so calculate the change in velocity
+			//	and update accordingly
+			perp = normal.perp();
+			if ( relativeVelocity.dot( perp ) < 0 )
+			{
+				perp.negate();
+			}
+			newVelocity = perp.Subtract( normal.ScaleBy(normal.dot( relativeVelocity )));
+			v = newVelocity.clone() ; 
+			
+			//	We know we're colliding, so calculate the change in velocity
+			//	and update accordingly
+			relativeVelocity = velocity[a].Subtract( velocity[b] );
+			if ( closestPoints.length > 1 )
+			{
+				//	Get the normal
+				normal = getNormal( polygons[b], closestPoints[1] as Vector2d );			
+				
+				//	We know we're colliding, so calculate the change in velocity
+				//	and update accordingly
+				perp = normal.perp();
+				if ( relativeVelocity.dot( perp ) < 0 )
+				{
+					perp.negate();
+				}
+				
+			} else
+			{
+				normal.negate();
+				perp.negate();
+				
+			}
+			if ( relativeVelocity.dot( perp ) < 0 )
+			{
+				perp.negate();
+			}
+			newVelocity = perp.Subtract( normal.ScaleBy(normal.dot( relativeVelocity )));
+			velocity[a].x = newVelocity.x ; 
+			velocity[a].y = newVelocity.y ;
+			velocity[b].x = v.x ;
+			velocity[b].y = v.y ;
+			
 		}
 		
 		private function draw( color:Number ):void
@@ -376,78 +412,55 @@ package
 			
 		}
 		/**
-		 * Returns a vector that is the new velocity of the polygon after collision 
-		 * @param a
-		 * @param b
+		 * Returns true if the closest point 
+		 * @param polygon
+		 * @param closestPoint
 		 * @return 
 		 * 
 		 */		
-		private function collisionResponse( a:Polygon2d, b:Polygon2d, u:Vector2d, v:Vector2d, closestPoint:Vector2d, distance:Number ):Vector2d
+		private function isVertex( polygon:Polygon2d, closestPoint:Vector2d ):Boolean
 		{
-			
-			var relativePosition:Vector2d = a.centroid.Subtract( b.centroid );
-			relativePosition.normalize();
-			var centroid:Vector2d ;
-			
-//			//	Move the polygons together
-//			if ( a.moved && !b.moved )
-//			{
-//				//	Move b the full distance
-//				centroid = b.centroid.clone();
-//				centroid.Add( relativePosition.ScaleBy( distance ));
-//				b.centroid = centroid ;
-//				b.updateLines();
-//				
-//			} else if ( b.moved && !a.moved )
-//			{
-//				//	Move a the full distance
-//				centroid = a.centroid.clone();
-//				centroid.Add( relativePosition.Negate().ScaleBy( distance ));
-//				a.centroid = centroid ;
-//				a.updateLines();
-//				
-//			} else
-//			{
-//				//	Move b half the distance
-//				centroid = b.centroid.clone();
-//				centroid.Add( relativePosition.ScaleBy( distance/2 ));
-//				b.centroid = centroid ;
-//				b.updateLines();
-//				
-//				//	Move a half the distance
-//				centroid = a.centroid.clone();
-//				centroid.Add( relativePosition.Negate().ScaleBy( distance/2 ));
-//				a.centroid = centroid ;
-//				a.updateLines();
-//			}
-			
-			
-//			var edge:Vector2d = getClosestEdge( a.vertices, closestPoint );
-//			var normal:Vector2d = edge.perp();
-//			var relativeVelocity:Vector2d = velocity[0].Subtract( velocity[1] );
-//			if ( normal.dot( relativeVelocity ) >= 0 )
-//			{
-//				//	They're separating, don't do anything
-//				//	Return the null vector so we know not to change the
-//				//	the velocity of either polygon
-//				return null ; 
-//			} else
-//			{
-//				//	We know we're colliding, so calculate the change in velocity
-//				//	and update accordingly
-//				var perp:Vector2d = normal.perp();
-//				var newVelocity:Vector2d = perp.Subtract( normal.ScaleBy(normal.dot( relativeVelocity )));
-//				newVelocity.normalize();
-//				return newVelocity ;
-//				
-//			}
-			
-			
-			
-			
-			return null ;
+			var vertices:Vector.<Vector2d> = polygon.vertices ;
+			for ( var i:int = 0; i < vertices.length; i++ )
+			{
+				var vertex:Vector2d = vertices[i] ;
+				var diff:Vector2d = closestPoint.Subtract( vertex );
+				if ( diff.length < .00001 )
+				{
+					return true ;	
+				}
+			}
+			return false ;
 		}
-		
+		/**
+		 * Returns the distance 
+		 * @return 
+		 * 
+		 */		
+		private function getDistance( polygon:Polygon2d, point:Vector2d ):Vector2d
+		{
+			var vertices:Vector.<Vector2d> = polygon.vertices ;
+			var dist:Number = Number.MAX_VALUE ;
+			var index:int ;
+			for ( var i:int = 0; i < vertices.length; i++ )
+			{
+				var b:Vector2d = vertices[(i + 1) % vertices.length];
+				var a:Vector2d = vertices[i] ;
+				var edge:Vector2d = b.Subtract( a ) ;
+				edge.normalize();
+				
+				var u:Vector2d = point.Subtract( a );
+				u.normalize();
+				
+				var d:Number = Math.abs( edge.dot( u ) - 1.0 );
+				if ( d < dist )
+				{
+					index = i ;
+					dist = d;
+				}
+			}
+			return polygon.getNormal( index ) ;
+		}
 		/**
 		 * Returns the edge that's closest to the given point
 		 * @return 
@@ -524,7 +537,7 @@ package
 			var polygon:Polygon2d = new Polygon2d( );
 			
 			//	The polygon should have at least 3 and at most six points
-			var points:int = 3 + int( Math.random() * 3 );
+			var points:int = 5;//3 + int( Math.random() * 3 );
 			
 			//	Add points to the polygon
 			var angle:Number = ( Math.PI / 180 ) * ( 360 / points ) ;

@@ -18,7 +18,9 @@ package
 	[SWF(width='400',height='400')]
 	public class PolygonCollisionDetection extends Sprite
 	{
-		private var polygons:Vector.<Polygon2d> ;
+		private var polygons:Vector.<Polygon2d> = new Vector.<Polygon2d>(2,true);
+		private var aabbs:Vector.<AABB> = new Vector.<AABB>(2,true);
+		private var velocity:Vector.<Vector2d> = new Vector.<Vector2d>(2,true);
 		private var currentPolygon:int = -1 ;
 		private var offset:Vector2d ;
 		private var solution:Object ;
@@ -26,12 +28,12 @@ package
 		public function PolygonCollisionDetection()
 		{
 			super();
-			polygons = new Vector.<Polygon2d>(2,true);
 			init( );
 		}
 		
 		private function init( ):void
 		{			
+			
 			//	Create a polygon 
 			var random:int = int( Math.random() * 30 );
 			var centroid:Vector2d = new Vector2d( stage.stageWidth/4, stage.stageHeight/2 - random ) ;
@@ -41,6 +43,19 @@ package
 			random = int( Math.random() * 30 );
 			centroid = new Vector2d( 3 * stage.stageWidth/4, stage.stageHeight/2 + random ) ;
 			polygons[1] = createPolygon( centroid );
+			
+			//	Give each polygon a velocity
+			var dx:Number, dy:Number ;
+			dx = 20 + int( Math.random() * 10 ) * ( 1 - 2 * int( Math.random() * 2 ));
+			dy = 20 + int( Math.random() * 10 ) * ( 1 - 2 * int( Math.random() * 2 ));
+			velocity[0] = new Vector2d( dx, dy );
+			do
+			{
+				dx = 20 + int( Math.random() * 10 ) * ( 1 - 2 * int( Math.random() * 2 ));
+				dy = 20 + int( Math.random() * 10 ) * ( 1 - 2 * int( Math.random() * 2 ));
+			} while ( dx == velocity[0].x || dy == velocity[0].y )
+			velocity[1] = new Vector2d( dx, dy );
+
 						
 			//	Calculate distance
 			calculateDistance();
@@ -49,7 +64,7 @@ package
 			draw( polygons );
 			
 			//	Listen for mouse up
-			stage.addEventListener( MouseEvent.CLICK, click );
+			addEventListener( Event.ENTER_FRAME, frame );
 			
 		}
 		
@@ -71,6 +86,8 @@ package
 			
 			//	TODO: Make sure to determine their AABBs intersect
 			
+			var polygonsIntersect:Boolean = SeparatingAxes.testIntersection( polygons[0], polygons[1] );
+			
 			//	Calculate the distance
 			calculateDistance();
 			
@@ -87,94 +104,346 @@ package
 			//	If the polygons are close enough together ...
 			if ( distance < threshold )
 			{
-				//	Move the polygons together
-				//	TODO: return a vector of velocities from this function
-				//	and translate point a and b by the respective velocities
-				var velocity:Vector.<Vector2d> = movePolygonsTogether( a, b );
-				a.add( velocity[0] );
-				b.add( velocity[1] );
-
-				//	Determine which closest point lies on an edge
-				var index:int = -1;
-				var edge:Vector2d ;
-				var normal:Vector2d ;
-				var polygon:Polygon2d ;
-				var c:Vector2d, d:Vector2d ;
-				
-				if ( !isVertex( polygons[0], a ) && isVertex( polygons[1], b ))
-				{
-					//	Grab the edge normal closest to point a
-					polygon = polygons[0] ;
-					index = getClosestEdgeNormalIndex( polygons[0], a );
-					normal = polygons[0].getNormal( index );
-					
-					//	Resolve the collision with polygon1 colliding into polygon0
-					resolveCollision( polygon[1], velocity[1].Subtract( velocity[0] ), normal );
-					
-					//	Resolve the collision with polygon0 colliding into polygon1
-					polygon = polygons[1] ;
-					normal = b.Subtract( polygons[1].centroid );
-					resolveCollision( polygon[0], velocity[0].Subtract( velocity[1] ), normal );
-					
-				} else if ( isVertex( polygons[0], a ) && !isVertex( polygons[1], b ))
-				{
-					//	Grab the edge normal closest to point b	
-					polygon = polygons[1] ;
-					index = getClosestEdgeNormalIndex( polygons[1], b );
-					normal = polygons[1].getNormal( index );
-					
-					//	Resolve the collision with polygon1 colliding into polygon0
-					resolveCollision( polygon[0], velocity[0].Subtract( velocity[1] ), normal );
-					
-					//	Resolve the collision with polygon0 colliding into polygon1
-					polygon = polygons[0] ;
-					normal = a.Subtract( polygons[0].centroid );
-					resolveCollision( polygon[1], velocity[1].Subtract( velocity[0] ), normal );
-
-				} else if ( isVertex( polygons[0], a ) && isVertex( polygons[1], b ))
-				{
-					//	Two vertices
-					//	Grab the edge normal closest to point b	
-					polygon = polygons[1] ;
-					index = getClosestEdgeNormalIndex( polygons[1], b );
-					normal = polygons[1].getNormal( index );
-					
-					//	Resolve the collision with polygon1 colliding into polygon0
-					resolveCollision( polygon[0], velocity[0].Subtract( velocity[1] ), normal );
-					
-					//	Grab the edge normal closest to point a
-					polygon = polygons[0] ;
-					index = getClosestEdgeNormalIndex( polygons[0], a );
-					normal = polygons[0].getNormal( index );
-					
-					//	Resolve the collision with polygon1 colliding into polygon0
-					resolveCollision( polygon[1], velocity[1].Subtract( velocity[0] ), normal );
-
-				} else if ( !isVertex( polygons[1], b ) && !isVertex( polygons[1], b ))
-				{
-					//	Two edges	
-					//	Resolve the collision with polygon0 colliding into polygon1
-					polygon = polygons[0] ;
-					normal = a.Subtract( polygons[0].centroid );
-					resolveCollision( polygon[1], velocity[1].Subtract( velocity[0] ), normal );
-					
-					//	Resolve the collision with polygon0 colliding into polygon1
-					polygon = polygons[1] ;
-					normal = b.Subtract( polygons[1].centroid );
-					resolveCollision( polygon[0], velocity[0].Subtract( velocity[1] ), normal );
-
-				}
-				
+				collisionResponse( a, b );
 			}
 			
 			//	Draw the polygons
 			draw( polygons, 0xaaaaaa );			
 		}
 		
+		
+		/**
+		 * Separate the axis-aligned bounding boxes if
+		 * the polygons intersect 
+		 */		
+		private function separateAABBs():void
+		{
+			//	Separate the AABBs
+			var intersection:AABB = new AABB();
+			aabbs[0].findIntersection( aabbs[1], intersection );
+			var w:Number = intersection.width ;
+			var h:Number = intersection.height ;
+			var d:Number = Math.sqrt( w * w + h * h ) ;
+			
+			//	Move each polygon apart by half this distance
+			var v:Vector2d = velocity[0].clone();
+			v.normalize();
+			
+			//	Move them both half the distance
+			//	Move polygon 0
+			var centroid:Vector2d = polygons[0].centroid.Add( v.Negate().ScaleBy( d/2 ));
+			updateCentroid( polygons[0], centroid ) ;
+			//velocity[0] = v.Negate().ScaleBy( velocity[0].length ) ;
+			
+			
+			//	Move polygon 1
+			v = velocity[1].clone();
+			v.normalize();
+			centroid = polygons[1].centroid.Add( v.Negate().ScaleBy( d/2 ));
+			updateCentroid( polygons[1], centroid ) ;
+			//velocity[1] = v.Negate().ScaleBy( velocity[1].length ) ;
+		}
+		
+		/**
+		 * Enter frame handler 
+		 * @param event
+		 * 
+		 */		
+		private function frame( event:Event ):void
+		{
+			//	Update the velocities of each polygon
+			updateCentroid( polygons[0], polygons[0].centroid.Add( velocity[0] ));
+			updateCentroid( polygons[1], polygons[1].centroid.Add( velocity[1] ));
+
+			//	Update the axis-aligned bounding boxes
+			updateAABBs( ) ;
+			
+			//	Do collision detection with stage edges
+			for ( var i:int = 0; i < polygons.length; i++ )
+			{
+				//	Grab a polygon
+				var polygon:Polygon2d = polygons[i];
+				polygon.moved = false ;
+				
+				//	Get the AABB
+				var aabb:AABB = aabbs[i] ;
+				var offstage:Boolean = ( aabb.xmin <= 0 )
+					|| ( aabb.xmax >= stage.stageWidth )
+					|| ( aabb.ymin <= 0 )
+					|| ( aabb.ymax >= stage.stageHeight );
+				
+				//	Get the centroid
+				var centroid:Vector2d = polygon.centroid.clone() ;
+				
+				if ( aabb.xmin <= 0 )
+				{
+					if ( velocity[i].dot( new Vector2d( 1, 0 )) < 0 )
+					{
+						velocity[i].x = -velocity[i].x ;
+						centroid.x -= aabb.xmin ;
+						polygon.moved = true ;
+					}
+				}
+				if ( aabb.xmax >= stage.stageWidth )
+				{
+					if ( velocity[i].dot( new Vector2d( -1, 0 )) < 0 )
+					{
+						velocity[i].x = -velocity[i].x ;
+						centroid.x -= ( aabb.xmax - stage.stageWidth ) ;
+						polygon.moved = true ;
+					}
+				}
+				if ( aabb.ymin <= 0 )
+				{
+					if ( velocity[i].dot( new Vector2d( 0, 1 )) < 0 )
+					{
+						velocity[i].y = -velocity[i].y ;
+						centroid.y -= aabb.ymin ;
+						polygon.moved = true ;
+					}
+				}
+				if ( aabb.ymax >= stage.stageHeight )
+				{
+					if ( velocity[i].dot( new Vector2d( 0, -1 )) < 0 )
+					{
+						velocity[i].y = -velocity[i].y ;
+						centroid.x -= ( aabb.ymax - stage.stageHeight ) ;
+						polygon.moved = true ;
+					}
+				}
+				
+				updateCentroid( polygon, centroid );
+			}
+			
+			//	Get the axis-aligned bounding boxes			
+			for ( i = 0; i < polygons.length; i++ )
+			{
+				//	Grab a polygon
+				polygon = polygons[i];
+				
+				//	Get the AABB
+				aabbs[i] = getAABB( polygon ) ;
+			}
+			
+			//	Do their AABBs intersect?
+			var aabbsIntersect:Boolean = aabbs[0].findIntersection( aabbs[1] ) ; 
+			
+			var color:Number = ( aabbsIntersect ? 0xff0000 : 0x000000 ) ;
+			
+			
+			//	Do the collision response here ...
+			if ( aabbsIntersect )
+			{
+				
+				if ( SeparatingAxes.testIntersection( polygons[0], polygons[1] ))
+					separateAABBs();
+				
+				//	Calculate the distance
+				calculateDistance();
+				
+				//	Store the two closest points
+				var a:Vector2d = new Vector2d( solution.Z[0], solution.Z[1] );
+				var b:Vector2d = new Vector2d( solution.Z[2], solution.Z[3] );
+				
+				//	Calculate the distance between them
+				var distance:Number = b.Subtract( a ).length ;
+				
+				//	Minimum distance threshold
+				var threshold:Number = 5.0 ;
+				
+				//	If the polygons are close enough together ...
+				if ( distance < threshold )
+				{
+					collisionResponse( a, b );
+					updateCentroid( polygons[0], polygons[0].centroid.Add( velocity[0] ));
+					updateCentroid( polygons[1], polygons[1].centroid.Add( velocity[1] ));
+
+				}
+			}
+			//	Update the axis-aligned bounding boxes
+			updateAABBs( ) ;
+			//	Draw the polygons
+			draw( polygons, color );			
+		}
+		
+		/**
+		 * Update the axis-aligned bounding boxes
+		 * of the polygons 
+		 * 
+		 */		
+		private function updateAABBs( ):void
+		{
+			//	Get the axis-aligned bounding boxes			
+			for ( var i:int = 0; i < polygons.length; i++ )
+			{
+				//	Get the AABB
+				aabbs[i] = getAABB( polygons[i] ) ;
+			}
+			
+		}
+		/**
+		 * Respond to the collision of the polygons.  Vectors a and b
+		 * are the two closest points between the polygon. 
+		 * @param a - The point on polygon a closest to polygon b
+		 * @param b - The poing on polygon b closest to polygon a
+		 * 
+		 */		
+		private function collisionResponse( a:Vector2d, b:Vector2d ):void
+		{
+			//	Move the polygons together
+			//	TODO: return a vector of velocities from this function
+			//	and translate point a and b by the respective velocities
+			movePolygonsTogether( a, b );
+//			velocity[0].negate() ;
+//			velocity[1].negate() ;
+//			//	Update the velocities of each polygon
+//			updateCentroid( polygons[0], polygons[0].centroid.Add( velocity[0] ));
+//			updateCentroid( polygons[1], polygons[1].centroid.Add( velocity[1] ));
+////			a.add( velocity[0] );
+////			b.add( velocity[1] );
+//			return ;
+			
+			//	Determine which closest point lies on an edge
+			var index:int = -1;
+			var edge:Vector2d ;
+			var normal:Vector2d ;
+			var polygon:Polygon2d ;
+			var c:Vector2d, d:Vector2d, v:Vector2d ;
+			
+			//	If the polygon a's closest point is not a vertex and
+			//	polygon b's closest point is a vertext ...
+			if ( !isVertex( polygons[0], a ) && isVertex( polygons[1], b ))
+			{
+				//	Grab the edge normal on polygon a that is closest to point a
+				polygon = polygons[0] ;
+				index = getClosestEdgeNormalIndex( polygons[0], a );
+				normal = polygons[0].getNormal( index );
+				
+				//	Resolve the collision with polygon1 colliding into polygon0
+				v = resolveCollision( polygons[1], velocity[1].Subtract( velocity[0] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[1].length );
+					updateCentroid( polygons[1], polygons[1].centroid.Add( v ));
+					velocity[1] = v ;
+					
+				}
+
+				
+				//	Resolve the collision with polygon0 colliding into polygon1
+				polygon = polygons[1] ;
+				normal = b.Subtract( polygons[1].centroid );
+				v = resolveCollision( polygons[0], velocity[0].Subtract( velocity[1] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[0].length );
+					updateCentroid( polygons[0], polygons[0].centroid.Add( v ));
+					velocity[0] = v ;
+					
+				}
+				
+				
+				//	If polygon a's closest point is a vertex and 
+				//	polygon b's closest point is not a vertex
+			} else if ( isVertex( polygons[0], a ) && !isVertex( polygons[1], b ))
+			{
+				//	Grab the edge normal closest to point b	
+				polygon = polygons[1] ;
+				index = getClosestEdgeNormalIndex( polygons[1], b );
+				normal = polygons[1].getNormal( index );
+				
+				//	Resolve the collision with polygon0 colliding into polygon1
+				v = resolveCollision( polygons[0], velocity[0].Subtract( velocity[1] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[0].length );
+					updateCentroid( polygons[0], polygons[0].centroid.Add( v ));
+					velocity[0] = v ;
+					
+				}
+				
+				//	Resolve the collision with polygon1 colliding into polygon0
+				polygon = polygons[0] ;
+				normal = a.Subtract( polygons[0].centroid );
+				v = resolveCollision( polygons[1], velocity[1].Subtract( velocity[0] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[1].length );
+					updateCentroid( polygons[1], polygons[1].centroid.Add( v ));
+					velocity[1] = v ;
+					
+				}
+				
+			} else if ( isVertex( polygons[0], a ) && isVertex( polygons[1], b ))
+			{
+				//	Two vertices
+				//	Grab the edge normal closest to point b	
+				polygon = polygons[1] ;
+				normal = b.Subtract( a ) ;
+				
+				//	Resolve the collision with polygon0 colliding into polygon1
+				v = resolveCollision( polygons[0], velocity[0].Subtract( velocity[1] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[0].length );
+					updateCentroid( polygons[0], polygons[0].centroid.Add( v ));
+					velocity[0] = v ;
+					
+				}
+				
+				//	Grab the edge normal closest to point a
+				polygon = polygons[0] ;
+				normal.negate();
+				
+				//	Resolve the collision with polygon1 colliding into polygon0
+				v = resolveCollision( polygons[1], velocity[1].Subtract( velocity[0] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[1].length );
+					updateCentroid( polygons[1], polygons[1].centroid.Add( v ));
+					velocity[1] = v ;
+					
+				}
+				
+			} else if ( !isVertex( polygons[1], b ) && !isVertex( polygons[1], b ))
+			{
+				//	Two edges	
+				//	Resolve the collision with polygon1 colliding into polygon0
+				polygon = polygons[0] ;
+				normal = a.Subtract( polygons[0].centroid );
+				v = resolveCollision( polygons[1], velocity[1].Subtract( velocity[0] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[1].length );
+					updateCentroid( polygons[1], polygons[1].centroid.Add( v ));
+					velocity[1] = v ;
+					
+				}
+				
+				//	Resolve the collision with polygon0 colliding into polygon1
+				polygon = polygons[1] ;
+				v = resolveCollision( polygons[0], velocity[0].Subtract( velocity[1] ), normal );
+				if ( v != null )
+				{
+					v.normalize();
+					v.scale( velocity[0].length );
+					updateCentroid( polygons[0], polygons[0].centroid.Add( v ));
+					velocity[0] = v ;
+				}
+			}
+		}
+		
 		/**
 		 * Moves both polygons half of the closest distance between them 
-		 * @param a
-		 * @param b
+		 * @param a - The point on polygon a that's closest to polygon b
+		 * @param b - The point on polygon b that's closest to polygon a
 		 * 
 		 */		
 		private function movePolygonsTogether( a:Vector2d, b:Vector2d ):Vector.<Vector2d>
@@ -185,16 +454,18 @@ package
 			//	Initialize some temp variables
 			var d:Vector2d ;
 			var index:int ;
-			
-			//	Get the first polygon's velocity
 			var v:Vector2d, m:Vector2d;
 			
+			//	Calculate the mid-point between a and b
 			var x:Number = ( b.x + a.x )/ 2 ;
 			var y:Number = ( b.y + a.y )/ 2 ;
 			m = new Vector2d( x, y );
 			
-			//	Get the first polygon's velocity
+			//	Get the vector from polygon a's centroit the point
+			//	that's closest to polygon b
 			d = a.Subtract( polygons[0].centroid );
+			
+			//	Get the vertex that's closest to the polygon in a given direction
 			index = Polygon2d.getExtremeIndex( polygons[1], d );
 			velocity[0] = v = polygons[1].getVertex( index ).Subtract( polygons[0].centroid );
 			
@@ -232,7 +503,12 @@ package
 		 */		
 		private function resolveCollision( polygon:Polygon2d, relativeVelocity:Vector2d, normal:Vector2d ):Vector2d
 		{
+			//	normal must be unit-length and outward facing
+			normal.normalize();
+			
 			//	Make sure the dot product between the normal and the relative velocity is negative
+			//	The dot product of the relative velocity and the outward facing normal yields
+			//	the component of the relative velocity in the normal direction
 			var dp:Number = relativeVelocity.dot( normal );
 			if ( dp < 0 )
 			{
@@ -240,13 +516,13 @@ package
 				var perp:Vector2d = normal.perp() ;
 				
 				//	The dot product between the relative velocity and the perp to the normal should be positive
-				if ( relativeVelocity.dot( normal ) < 0 )
+				if ( relativeVelocity.dot( perp ) < 0 )
 				{
 					perp.negate();
 				}
 				
-				//	Get the component of the relative velocity in the normal direction
-				
+				//	Subtract the component of the relative velocity in the
+				//	normal direction from the normal perpendicular
 				var normalComponent:Vector2d = normal.ScaleBy( dp );
 				return perp.Subtract( normalComponent );
 					
@@ -364,76 +640,58 @@ package
 		}
 		
 				
+		
 		/**
-		 * Enter frame handler 
-		 * @param event
+		 * Returs the axis-aligned bounding box (AABB) of a given polygon 
+		 * @param polygon
+		 * @return 
 		 * 
 		 */		
-		private function frame( event:Event ):void
+		private function getAABB( polygon:Polygon2d ):AABB 
 		{
-			//	Mouse location
-			//	TODO: Remove mouse check
-			var mouse:Vector2d = new Vector2d( mouseX, mouseY );
-			
-			//	Determine which polygon the mouse is inside
-			//	TODO: Remove mouse check
-			var n:int = polygons[currentPolygon].vertices.length ;
-			
-			//	Constrain the centroid so that the polygon doesn't
-			//	go into a negative quadrant of the stage
-			//	TODO: Iterate over both polygons and constrain each
-
-			var min:Vector2d = new Vector2d( Number.MAX_VALUE, Number.MAX_VALUE );
-			var max:Vector2d = new Vector2d( );
-			for ( var i:int = 0; i < n; i++ )
+			var xmin:Number = Number.MAX_VALUE ;
+			var ymin:Number = Number.MAX_VALUE ;
+			var xmax:Number = Number.MIN_VALUE ;
+			var ymax:Number = Number.MIN_VALUE ;
+			for each ( var vertex:Vector2d in polygon.vertices )
 			{
-				var vertex:Vector2d = polygons[currentPolygon].vertices[i].Subtract( polygons[currentPolygon].centroid ) ;
-				min.x = Math.min( vertex.x, min.x );
-				min.y = Math.min( vertex.y, min.y );
-				max.x = Math.max( vertex.x, max.x );
-				max.y = Math.max( vertex.y, max.y );
+				xmin = Math.min( xmin, vertex.x );
+				xmax = Math.max( xmax, vertex.x );
+				ymin = Math.min( ymin, vertex.y );
+				ymax = Math.max( ymax, vertex.y );
 			}
-			//	TODO: Add each polygon's velocity to each polygon's centroid
-			var centroid:Vector2d = mouse.Add( offset );
-			centroid.x = Math.max( centroid.x, Math.abs(min.x-2));
-			centroid.y = Math.max( centroid.y, Math.abs(min.y-2));
-			centroid.x = Math.min( centroid.x, stage.stageWidth - ( max.x + 2));
-			centroid.y = Math.min( centroid.y, stage.stageHeight - ( max.y + 2));
-			for ( i = 0; i < n; i++ )
-			{
-				vertex = polygons[currentPolygon].vertices[i] ;
-				vertex.subtract( polygons[currentPolygon].centroid );
-				vertex.add( centroid ) ;
-			}
-			
-			polygons[currentPolygon].centroid = centroid ;
-			polygons[currentPolygon].orderVertices();			
-			polygons[currentPolygon].updateLines();
-			
-			//	TODO: Check for AABB intersection and/or polygon intersection
-			//	TODO: Move the code from the click handler to here
-			//	TODO: Remove the click handler
+			var aabb:AABB = new AABB( xmin, ymin, xmax, ymax );
+			return aabb ;
 		}
 		
 		private function draw( polygons:Vector.<Polygon2d>, color:Number = 0x000000 ):void
 		{
-			//graphics.clear();
+			graphics.clear();
 			if ( solution != null )
 			{
 				graphics.lineStyle( 2, 0xff0000 );
 				graphics.moveTo( solution.Z[0], solution.Z[1] );
 				graphics.lineTo( solution.Z[2], solution.Z[3] );
 			}
-			graphics.lineStyle( 2, color );
+			
 			for ( var i:int = 0; i < polygons.length; i++ )
 			{	
 				var polygon:Polygon2d = polygons[i] ;
+				graphics.lineStyle( 2, color );
 				for ( var j:int = 0, k:int = -1; j < polygon.vertices.length; k = j++ )
 				{
 					var a:Vector2d = polygon.getVertex( k ) ;
 					var b:Vector2d = polygon.getVertex( j ) ;
 					graphics.moveTo( a.x, a.y );
 					graphics.lineTo( b.x, b.y );
+				}
+				
+				var aabb:AABB = aabbs[i] ;
+				if ( aabb != null )
+				{
+					graphics.lineStyle( .5, 0x0000ff ) ;
+					graphics.drawRect( aabb.xmin, aabb.ymin, aabb.width, aabb.height ) ;
+					
 				}
 			}
 		}
